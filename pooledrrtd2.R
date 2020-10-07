@@ -1,0 +1,616 @@
+library(survival)
+library(rms)
+library(mfp)
+library(mice)
+require(devtools) 
+# install_git("https://github.com/BavoDC/CalibrationCurves") 
+library(CalibrationCurves)
+library(gplots)
+library(survminer)
+library(gtools)
+
+
+load("rcts.RData")
+
+rcts$sexe<-as.factor(rcts$sexe)
+rcts$heart_failure<-as.factor(rcts$heart_failure)
+rcts$hypertension<-as.factor(rcts$hypertension)
+rcts$respiratory_disease<-as.factor(rcts$respiratory_disease)
+
+rcts$aides<-as.factor(rcts$aides)
+rcts$organ_graft<-as.factor(rcts$organ_graft)
+rcts$immunosupressive_drug<-as.factor(rcts$immunosupressive_drug)
+rcts$hemopathy<-as.factor(rcts$hemopathy)
+rcts$type.eer<-as.factor(rcts$type.eer)
+rcts$reprisediurese<-as.factor(rcts$reprisediurese)
+
+rcts$diabetes[rcts$diabetes=="Aucun diabète OU diabète\ntraité par régime uniquement"]<-"NON"
+rcts$diabetes[rcts$diabetes=="Diabète sans complication"]<-"NON"
+rcts$diabetes[rcts$diabetes=="Diabète avec ou sans complications"]<-"OUI"
+rcts$diabetes[rcts$diabetes=="Diabète compliqué (lésions\norganiques liées au diabète)"]<-"OUI"
+rcts$diabetes<-as.factor(rcts$diabetes)
+
+rcts$cirrhosis[rcts$cirrhosis=="Intermédiaire ou sévère"]<-"OUI"
+rcts$cirrhosis[rcts$cirrhosis=="Modérée (sans hypertension\nportale, en incluant les\nhépatites chroniques)"]<-"OUI"
+rcts$cirrhosis<-as.factor(rcts$cirrhosis)
+
+rcts$cancer[rcts$cancer=="Oui, AVEC métastases"]<-"OUI"
+rcts$cancer[rcts$cancer=="Oui, SANS métastases"]<-"OUI"
+rcts$cancer<-as.factor(rcts$cancer)
+rcts$anurie<-as.factor(rcts$kidney_sofa==4)
+
+rcts$delaihospirea<-as.numeric(difftime(rcts$datehospirea, rcts$datehospi, units = "days"))
+
+rcts$event<-"columninitiation"
+
+for (i in 1:nrow(rcts)) {
+        if(rcts$etatsortierea[i]=="Vivant") {
+                rcts$event[i]<-"SORTIEm"
+        }
+}
+
+for (i in 1:nrow(rcts)) {
+        if(rcts$etatsortierea[i]=="Décédé") {
+                rcts$event[i]<-"DCm"
+        }
+}
+
+threshold_rrt_day<-2
+
+for (i in 1:nrow(rcts)) {
+        if(is.na(rcts$date.eer)[i]==FALSE & as.numeric(difftime(rcts$date.eer[i], rcts$date.rando[i], units = "days"))<=threshold_rrt_day) {
+                rcts$event[i]<-"EERm"
+        }
+}
+
+
+rcts$event<-as.factor(rcts$event)
+with(rcts[rcts$bras=="STRATEGIE D ATTENTE",], table(etude, event))
+rcts2<-rcts[,-which(names(rcts) %in% c("naiss", "datehospi", "datehospirea", "datehospi","kidney_sofa" ,"type.eer", "lastrrt", "rrtfree", "vasofree"))]
+
+# model developpement on pooled dataset
+
+imp <- mice(rcts2, maxit=0)
+predM <- imp$predictorMatrix
+predM[,c("bras", "date.rando", "hospitalmortality", "ventilfree", "etude", "date.eer", "eer.initiation")]<-0
+meth <- imp$method
+set.seed(123)
+imp_pooled_tardif<-mice(rcts2[rcts2$bras=="STRATEGIE D ATTENTE",], m=5, seed = 1, predictorMatrix = predM, method = meth)
+imp_pooled_precoce<-mice(rcts2[rcts2$bras=="STRATEGIE PRECOCE",], m=5, seed = 1, predictorMatrix = predM, method = meth)
+save.image("imputedpooleddata2.RData")
+
+## Selection in each imputed (We'll have to do AIC-like backward slection on pooled Wald tests with cut-off p=0.157)
+fullmodel<-summary(pool(with(imp_pooled_tardif,
+                             glm(I(event=="EERm")
+                                 ~ age + sexe + pot_e + I(creat_e/creat_b)+anurie + sofa_e + weight_e + heart_failure + hypertension + diabetes + cirrhosis + immunosupressive_drug +
+                                         urea_e + ph_e, family="binomial"))))
+
+
+fullmodel
+
+
+imp1bis<-complete(imp_pooled_tardif,1)
+library(gam)
+par(mfrow=c(3,2))
+plot(gam(I(event=="EERm")~s(age), data=imp1bis))
+plot(gam(I(event=="EERm")~s(pot_e), data=imp1bis))
+plot(gam(I(event=="EERm")~s(ph_e), data=imp1bis))
+plot(gam(I(event=="EERm")~s(sofa_e), data=imp1bis))
+plot(gam(I(event=="EERm")~s(urea_e), data=imp1bis))
+plot(gam(I(event=="EERm")~s(weight_e), data=imp1bis))
+
+imp1bis$creatratio<-imp1bis$creat_e/imp1bis$creat_b
+plot(gam(I(event=="EERm")~s(creatratio), data=imp1bis))
+plot(gam(I(event=="EERm")~creatratio, data=imp1bis))
+plot(gam(I(event=="EERm")~poly(creatratio,2), data=imp1bis))
+
+selmod <- as.list(1: imp_pooled_tardif$m)
+for (i in 1: imp_pooled_tardif$m) {
+        data.i <- complete(imp_pooled_tardif, i)
+        data.i$rrt4 <- as.numeric(data.i$event=="EERm")
+        data.i$h_sofagreater3<-factor(data.i$hemodynamic_sofa>=3)
+        data.i$r_sofagreater3<-factor(data.i$respi_sofa>=3)
+        data.i$p_sofagreater2<-factor(data.i$platelet_sofa>=2)
+        data.i$creatratiosquared<-(data.i$creat_e/data.i$creat_b)^2
+        data.i$phsquared<-data.i$ph_e^2
+        data.i$potsquared<-data.i$pot_e^2
+        data.i$sofasquared<-data.i$sofa_e^2
+        data.i$new.pot_e<-ifelse(data.i$pot_e>4,data.i$pot_e,4)
+        data.i$new.ph_e<-ifelse(data.i$ph_e>7.1,data.i$ph_e,7.1)
+        selmod[[i]] <- fastbw(lrm(I(event=="EERm")~ age + sexe + pot_e + I(creat_e/creat_b)+anurie + sofa_e + weight_e + heart_failure + hypertension + diabetes + cirrhosis + immunosupressive_drug +
+        urea_e + ph_e, data=data.i),rule="p",type="individual",sls=0.157)
+}
+
+selvar <- lapply(selmod,function(x){x$factors.kept})
+matselvar <- matrix(0, nrow=5, ncol=length(fullmodel$term)-1)
+colnames(matselvar) <- as.character(fullmodel$term)[-1]
+
+for(i in 1: imp_pooled_tardif$m) { matselvar[i, selvar[[i]]] <- 1 }
+
+apply(matselvar,2,sum)*20 # Percent selection of each variable
+
+       
+# final model
+finalmodel<-summary(pool(with(imp_pooled_tardif, glm(I(event=="EERm") ~  pot_e + sofa_e + weight_e + immunosupressive_drug +
+                                                             urea_e + ph_e, family="binomial"))))
+finalmodel
+
+### Validation
+validationbw <- as.list(1: imp_pooled_tardif$m)
+for (i in 1:imp_pooled_tardif$m) {
+        data.i <- complete(imp_pooled_tardif, i)
+        data.i$rrt4 <- as.numeric(data.i$event=="EERm")
+        data.i$h_sofagreater3<-factor(data.i$hemodynamic_sofa>=3)
+        data.i$r_sofagreater3<-factor(data.i$respi_sofa>=3)
+        data.i$p_sofagreater2<-factor(data.i$platelet_sofa>=2)
+        data.i$creatratiosquared<-(data.i$creat_e/data.i$creat_b)^2
+        data.i$phsquared<-data.i$ph_e^2
+        data.i$potsquared<-data.i$pot_e^2
+        data.i$sofasquared<-data.i$sofa_e^2
+        data.i$new.pot_e<-ifelse(data.i$pot_e>4,data.i$pot_e,4)
+        data.i$new.ph_e<-ifelse(data.i$ph_e>7.1,data.i$ph_e,7.1)
+        validationbw[[i]] <- validate(lrm(I(event=="EERm")~ age + sexe + pot_e + I(creat_e/creat_b)+anurie + sofa_e + weight_e + heart_failure + hypertension + diabetes + cirrhosis + immunosupressive_drug + urea_e + ph_e, data=data.i, x=T, y=T),
+                                      bw=TRUE, rule='p', sls=0.157, type= 'individual',B=200)
+}
+
+cindex<-matrix(0,2,imp_pooled_tardif$m)
+rownames(cindex)<-c("apparent c-index", "corrected c-index")
+for (i in 1:imp_pooled_tardif$m) {
+        cindex[1,i]<-.5*(validationbw[[i]][1,1]+1)
+        cindex[2,i]<-.5*(validationbw[[i]][1,5]+1)
+}
+cindex
+apply(cindex, 1, mean)
+
+calcurves<-matrix(0,2,imp_pooled_tardif$m)
+rownames(calcurves)<-c("corrected intercept", "corrected slope")
+for (i in 1:imp_pooled_tardif$m) {
+        calcurves[1,i]<-validationbw[[i]][3,5]
+        calcurves[2,i]<-validationbw[[i]][4,5]
+}
+calcurves
+apply(calcurves, 1, mean)
+
+###
+
+calibrationcurves<-as.list(1:imp_pooled_tardif$m)
+for (i in 1: imp_pooled_tardif$m) {
+        data.i <- complete(imp_pooled_tardif, i)
+        data.i$rrt4 <- as.numeric(data.i$event=="EERm")
+        data.i$h_sofagreater3<-factor(data.i$hemodynamic_sofa>=3)
+        data.i$r_sofagreater3<-factor(data.i$respi_sofa>=3)
+        data.i$p_sofagreater2<-factor(data.i$platelet_sofa>=2)
+        data.i$creatratiosquared<-(data.i$creat_e/data.i$creat_b)^2
+        data.i$phsquared<- (data.i$ph_e)*(data.i$ph_e)
+        data.i$sofasquared<- (data.i$sofa_e)*(data.i$sofa_e)
+        calibrationcurves[[i]]<-calibrate(lrm(I(event=="EERm") ~ pot_e + sofa_e + weight_e + immunosupressive_drug +
+                                                      urea_e + ph_e, data=data.i, x=T,y=T), B=200)
+}
+
+par(mfrow=c(2,3))
+for (i in 1:imp_pooled_tardif$m) {
+        plot(calibrationcurves[[i]])
+}
+
+## Internal Calibration plot (contains all usefull information)
+par(mfrow=c(2,3))
+expit <- function(x){exp(x)/(1+exp(x))}
+
+for (i in 1:imp_pooled_tardif$m) {
+        fit1 <- glm(I(event=="EERm")~ pot_e + sofa_e + weight_e + immunosupressive_drug +
+                            urea_e + ph_e, family="binomial", data=complete(imp_pooled_tardif,i))
+        Pred1 <- predict(fit1)
+        Probs1<-expit(Pred1)
+        val.prob.ci.2(Probs1, complete(imp_pooled_tardif,i)$event=="EERm", col.ideal="blue", smooth = FALSE, statloc=FALSE, legendloc=FALSE)
+        temp<-Probs1
+        lines(calibrationcurves[[i]][,c(1,2)], lty=2, col="black")
+        lines(calibrationcurves[[i]][,c(1,3)], lty=1, col="black")
+        legend(.5,.35, legend=c("Ideal", "Apparent (lowess)", "Bias-corrected (lowess)"),
+               col=c("blue", "black", "black"), lty=c(1,2,1), cex=.8, seg.len=0.6,bg="transparent",x.intersp=.5, y.intersp=.8,
+               box.lty=2, box.lwd=0)
+
+        n <- 6
+        plotCI(tapply(temp,quantcut(temp,seq(0,1,by=1/n)),mean), tapply(complete(imp_pooled_tardif,i)$event=="EERm", quantcut(temp,seq(0,1,by=1/n)),mean), ui=tapply(complete(imp_pooled_tardif,i)$event=="EERm", quantcut(temp,seq(0,1,by=1/n)),function(x){binom.test(sum(x==1), length(x))$conf.int[2]}), li=tapply(complete(imp_pooled_tardif,i)$event=="EERm", quantcut(temp,seq(0,1,by=1/n)),function(x){binom.test(sum(x==1), length(x))$conf.int[1]}), add=T, pch=18, gap=0, sfrac=0.005, col="red")
+        seqpos<-seq(0,1,by=.05)
+        textpos<-rev(seqpos[(length(seqpos)-6):length(seqpos)])
+        space<-.03
+        text(0,textpos[1], cex=.8, pos=4, paste("Calibration"))
+        text(0,textpos[2], cex=.8, pos=4, paste("   biais-corrected intercept:", format(round(calcurves[1,i],2), nsmall=2) ))
+        text(0,textpos[3], cex=.8, pos=4, paste("   biais-corrected slope:", format(round(calcurves[2,i],2), nsmall=2) ))
+        text(0,textpos[4]-space, cex=.8, pos=4, paste("Discrimination"))
+        text(0,textpos[5]-space, cex=.8, pos=4, paste("   apparent c-statistic:", format(round(cindex[1,i],2), nsmall=2) ))
+        text(0,textpos[6]-space, cex=.8, pos=4, paste("   biais-corrected c-statistic:", format(round(cindex[2,i],2), nsmall=2) ))
+        box()
+        }
+
+
+### Treatment effect across quantiles
+
+## model predictions for akiki dataset
+finalmodelcoefs<-finalmodel[,"estimate"]
+
+# predictions tardif
+tempprobs_tardif<-as.list(1:imp_pooled_tardif$m)
+for (i in 1:imp_pooled_tardif$m) {
+        X <- model.matrix(~ pot_e + sofa_e + weight_e + immunosupressive_drug +
+                                  urea_e + ph_e, data= complete(imp_pooled_tardif,i))
+        tempprobs_tardif[[i]]<-expit(X %*% finalmodelcoefs)
+        tempprobs_tardif<-sapply(tempprobs_tardif, c)
+}
+probs_tardif<-apply(tempprobs_tardif, 1, mean)
+
+# predictions precoce
+tempprobs_precoce<-as.list(1:imp_pooled_precoce$m)
+for (i in 1:imp_pooled_tardif$m) {
+        X <- model.matrix(~  pot_e + sofa_e + weight_e + immunosupressive_drug +
+                                  urea_e + ph_e, data= complete(imp_pooled_precoce,i))
+        tempprobs_precoce[[i]]<-expit(X %*% finalmodelcoefs)
+        tempprobs_precoce<-sapply(tempprobs_precoce, c)
+}
+probs_precoce<-apply(tempprobs_precoce, 1, mean)
+
+# put prababilities in the first completed dataset (non imputations of the primary outcome)
+pooled_po_dataset<-rbind(
+        cbind(complete(imp_pooled_tardif,1), probs=probs_tardif),
+        cbind(complete(imp_pooled_precoce,1), probs=probs_precoce)
+)
+
+overallcox<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=="STRATEGIE PRECOCE"), data = pooled_po_dataset)
+HR_overall<-c(
+        exp(coef(overallcox)),
+        exp(confint(overallcox))
+)
+
+survfit.obj<-survfit(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=="STRATEGIE PRECOCE"), data = pooled_po_dataset)
+splots<-ggsurvplot(survfit.obj, data=pooled_po_dataset,
+                        ggtheme = theme_survminer(),
+                        title    = "Pooled AKIKI and IDEAL-ICU",
+                        legend.title = "Strategy",
+                        pval=FALSE, pval.method = F,
+                        risk.table = FALSE, 
+                        break.time.by = 7,
+                        tables.theme = theme_cleantable(), 
+                        tables.y.text = F)
+
+splots
+
+ARD_overalltable<-c(
+1-tail(weightedsurvivaltables(survfit.obj$time, survfit.obj$surv, group="A"),1)[2],
+1-tail(weightedsurvivaltables(survfit.obj$time, survfit.obj$surv, group="B"),1)[2],
+(1-tail(weightedsurvivaltables(survfit.obj$time, survfit.obj$surv, group="B"),1)[2])-(1-tail(weightedsurvivaltables(survfit.obj$time, survfit.obj$surv, group="A"),1)[2]),
+survfit.obj$n[1], survfit.obj$n[2] )
+names(ARD_overalltable)<-c("death rate in late", "death rate in early", "overall ARD", "n late", "n early")
+ARD_overalltable
+ardoverallvar<-function(x) {(x[1]*(1-x[1])/x[4]) + (x[2]*(1-x[2])/x[5])}
+
+ARD_overall<-c(
+ARD_overalltable[3],
+ARD_overalltable[3]+c(-1,1)*qnorm(.975)*sqrt(ardoverallvar(ARD_overalltable))
+)
+
+RR_overall<-ARD_overalltable[2]/ARD_overalltable[1]
+seRR_overall<-sqrt(
+        ((ARD_overalltable[4]-ARD_overalltable[4]*ARD_overalltable[1])/ARD_overalltable[4]*ARD_overalltable[1])/ARD_overalltable[4] +
+        ((ARD_overalltable[5]-ARD_overalltable[5]*ARD_overalltable[2])/ARD_overalltable[5]*ARD_overalltable[2])/ARD_overalltable[5]        
+)
+
+RR_overall<-c(RR_overall, RR_overall+c(-1,1)*qnorm(.975)*seRR_overall)
+
+HRs<-list()
+par(mfrow=c(2,4))
+for (i in 3:10) {
+        n<-i # number of quantiles
+        pooled_po_dataset$quantile<-quantcut(pooled_po_dataset$probs, seq(0,1,by=1/n))
+        
+        HRs[[i]]<-exp(sapply(levels(pooled_po_dataset$quantile), function(x) {mod<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=="STRATEGIE PRECOCE"), data = pooled_po_dataset, subset=quantile==x)
+        c(coef(mod), confint(mod))}))
+        HRs
+        plotCI(1:n, HRs[[i]][1,], ui=HRs[[i]][3,], li=HRs[[i]][2,], pch=18, gap=0, sfrac=0.005, col="red", xlab="Quantile of Predicted Probability", ylab="Hazard Ratio")
+        abline(h=1)
+}
+
+q<-6
+
+pooled_po_dataset$quantile<-quantcut(pooled_po_dataset$probs, seq(0,1,by=1/q))
+quantilemean<-tapply(pooled_po_dataset$probs, pooled_po_dataset$quantile, function(x) summary(x)[4])
+quantilecuts<-as.numeric(substr(names(quantilemean), start=2, stop=5)[-1])
+
+########## HR penalized smoothing ##########
+library(mgcv)
+nfittp = gam(derniere.nouvelles.censureJ60~bras+s(probs,by=bras, bs='ps'), 
+             data=pooled_po_dataset, weights = etat.censureJ60, 
+             family = 'cox.ph', method = "REML")
+
+df.precoce  = expand.grid(bras = 'STRATEGIE PRECOCE', probs = seq(0.02468, .55, by=.005))
+df.tardif = expand.grid(bras = 'STRATEGIE D ATTENTE', probs = seq(0.02468, .55, by=.005))
+
+y0.precoce_ = predict(nfittp,newdata=df.precoce,type="lpmatrix")
+y0.tardif_ = predict(nfittp,newdata=df.tardif,type="lpmatrix")
+
+y0.precoce = predict(nfittp,newdata=df.precoce,type="link", se.fit=TRUE)
+y0.tardif = predict(nfittp,newdata=df.tardif,type="link", se.fit=TRUE)
+
+dplot = data.frame(
+        probs = seq(0.02468, .55, by=.005),
+        b.precoce = y0.precoce$fit - y0.tardif$fit,
+        s.precoce = sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+                l = matrix(y0.precoce_[i,] - y0.tardif_[i,])
+                t(l) %*% vcov(nfittp) %*% l
+        })
+)
+
+
+par(mfrow=c(1,2))
+plot(seq(0.02468, .55, by=.005), exp(y0.tardif$fit), type='l', log='y', lwd=2, xlab="Probs", ylab="Relative Risk")
+points(seq(0.02468, .55, by=.005), exp(y0.tardif$fit + qnorm(.975) * y0.tardif$se.fit), type='l', col=1, lwd=2, lty=2)
+points(seq(0.02468, .55, by=.005), exp(y0.tardif$fit - qnorm(.975) * y0.tardif$se.fit), type='l', col=1, lwd=2, lty=2)
+points(seq(0.02468, .55, by=.005), exp(y0.precoce$fit), type='l', col='red', lwd=2)
+points(seq(0.02468, .55, by=.005), exp(y0.precoce$fit + qnorm(.975) * y0.precoce$se.fit), type='l', col=2, lwd=2, lty=2)
+points(seq(0.02468, .55, by=.005), exp(y0.precoce$fit - qnorm(.975) * y0.precoce$se.fit), type='l', col=2, lwd=2, lty=2)
+legend(.7, .8, c("Late", "Early"), lty=1, lwd=2, col=1:2, bty='n')
+abline(h=1)
+
+
+plot(seq(0.02468, .55, by=.005), exp(dplot$b.precoce), type = 'l', ylab = 'Hazard Ratio', xlab = 'Probs', lwd=2, ylim=c(.5,1.3))
+points(seq(0.02468, .55, by=.005), exp(dplot$b.precoce - qnorm(.975) * sqrt(dplot$s.precoce)), type= 'l', lty = 2, lwd=2)
+points(seq(0.02468, .55, by=.005), exp(dplot$b.precoce + qnorm(.975) * sqrt(dplot$s.precoce)), type= 'l', lty = 2, lwd=2)
+abline(h=1)
+
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(dplot$b.precoce + qnorm(.975) * sqrt(dplot$s.precoce)),
+                                                                          rev(exp(dplot$b.precoce - qnorm(.975) * sqrt(dplot$s.precoce)))),
+        col= rgb(1, 0, 0,0.5))
+
+
+#### Penalized splines (doesn't work for now..) struggle to extract relevant basis from pspline functions
+cent<-.3
+probs.ps.p <- with(pooled_po_dataset, ifelse(bras=="STRATEGIE PRECOCE", probs, cent))
+probs.ps.t <- with(pooled_po_dataset, ifelse(bras=="STRATEGIE D ATTENTE", probs, cent))
+
+degf<-3
+nt<-trunc(2.5*degf)+1
+fit.ps.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + pspline(probs.ps.p, nterm=nt, df=degf, penalty=TRUE) + pspline(probs.ps.t, nterm=nt, df=degf, penalty=TRUE), data = pooled_po_dataset, x=TRUE)
+
+ypred<-predict(fit.ps.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.ps.p=seq(0.02468, .55, by=.005), probs.ps.t=cent), se=TRUE)
+ypred2<-predict(fit.ps.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.ps.p=cent, probs.ps.t=seq(0.02468, .55, by=.005)), se=TRUE)
+
+yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2<- ypred2$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
+        lwd=2, log='y',
+        xlab="Probs", ylab="Relative risk")
+
+
+y0.precoce_<-data.frame(bras = 1, cbind(as.matrix(pspline(seq(0.02468, .55, by=.005), nterm=nt, df=degf, penalty=FALSE)), as.matrix(pspline(rep(cent,106), nterm=nt, df=degf, penalty=FALSE))))
+y0.tardif_<-data.frame(bras = 0, cbind(as.matrix(pspline(rep(cent,106), nterm=nt, df=degf, penalty=FALSE)), as.matrix(pspline(seq(0.02468, .55, by=.005), nterm=nt, df=degf, penalty=FALSE))))
+
+plot(seq(0.02468, .55, by=.005),exp(
+        as.matrix(y0.precoce_) %*% coef(fit.ps.int)), type="l")
+lines(seq(0.02468, .55, by=.005), exp(as.matrix(y0.tardif_) %*% coef(fit.ps.int)), col="red")
+
+
+l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+        matrix(y0.precoce_[i,] - y0.tardif_[i,]) })
+
+l<-matrix(as.numeric(l), nrow(l), 106)
+
+fits<-as.numeric(t(l) %*% coef(fit.ps.int))
+se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+        l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
+        t(l) %*% vcov(fit.ps.int) %*% l
+})
+
+yy <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
+
+matplot(seq(0.02468, .55, by=.005), exp(matrix(yy, ncol=3)), type='l', lty=c(1,2,2),
+        lwd=2, col=1, log='y',
+        xlab="Probs", ylab="Relative risk")
+abline(a=0, b=0)
+
+
+##### RCS one knot at the median
+probs.int.p <- with(pooled_po_dataset, ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
+probs.int.t <- with(pooled_po_dataset, ifelse(bras=="STRATEGIE D ATTENTE", probs-0.25, 0))
+probs.c<-pooled_po_dataset$probs-.25
+
+dfs<-3
+kn <- quantile(probs.c, seq(0,1,length=dfs)[-c(1,dfs)])
+rg <-range(probs.c)
+fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
+
+fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
+
+ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2<- ypred2$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
+        lwd=2, log='y',
+        xlab="Probs", ylab="Relative risk")
+
+
+y0.precoce_<-data.frame(bras = 1, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(0, knots = kn, Boundary.knots=rg))
+y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg))
+
+
+l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+        matrix(y0.precoce_[i,] - y0.tardif_[i,]) })
+
+l<-matrix(as.numeric(l), nrow(l), 106)
+
+fits<-as.numeric(t(l) %*% coef(fit.int))
+se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+        l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
+        t(l) %*% vcov(fit.int) %*% l
+})
+
+yy <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
+
+matplot(seq(0.02468, .55, by=.005), exp(matrix(yy, ncol=3)), type='l', lty=c(1,2,2),
+        lwd=2, col=1, log='y',
+        xlab="Probs", ylab="Relative risk")
+abline(a=0, b=0)
+
+
+
+## HR plot
+dev.off()
+plotCI(quantilemean, HRs[[q]][1,], ui=HRs[[q]][3,], li=HRs[[q]][2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Hazard Ratio", main="60 Days Survival", xlim=c(0, .6), ylim = c(.4,2.3), las=1, bty="n")
+lines(c(0,.6), y=c(1,1), lwd=2)
+segments(0,HR_overall[1], .6, HR_overall[1], lty=2, lwd=2)
+for (i in 1:length(quantilecuts)) {
+        segments(quantilecuts[i],.45, quantilecuts[i], 2.2, lty=3)
+}
+segments(0,.45, 0, 2.2, lty=3)
+text(quantilemean, 2.3, paste("Q", 1:q, sep=""), cex=.8)
+arrows(.6, c(1.05,2-1.05), .6, c(1.05+.4, 2-1.05-.4), length = 0.07, xpd=TRUE)
+mtext(text="favors delayed", side=4,line=0, at=1.05, cex=1, adj=0)
+mtext(text="favors early", side=4,line=-0, at=2-1.05, cex=1, adj=1)
+
+points(seq(0.02468, .55, by=.005), exp(yy[,1]), type = 'l', lwd=1.2,col="#6A6599FF")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(yy[,2]), rev(exp(yy[,3]))),
+        col= rgb(0, .1,.5,0.15), border=NA)
+
+
+points(seq(0.02468, .55, by=.005), exp(dplot$b.precoce), type = 'l', lwd=1.2, col="#6A6599FF")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(dplot$b.precoce + qnorm(.975) * sqrt(dplot$s.precoce)),
+                                                                          rev(exp(dplot$b.precoce - qnorm(.975) * sqrt(dplot$s.precoce)))),
+                                                                col= rgb(0, .1,.5,0.15), border=NA)
+
+
+
+
+pooled_po_dataset$quantile<-quantcut(pooled_po_dataset$probs, seq(0,1,by=1/q))
+survfit.obj<-list()
+splots<-list()
+for (j in 1:q) {
+        survfit.obj[[j]]<-survfit(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=="STRATEGIE PRECOCE"), data = pooled_po_dataset[pooled_po_dataset$quantile==colnames(HRs[[q]])[j],])
+        splots[[j]]<-ggsurvplot(survfit.obj[[j]], data=pooled_po_dataset[pooled_po_dataset$quantile==colnames(HRs[[q]])[j],],
+                                ggtheme = theme_survminer() + theme(plot.title = element_text(hjust = 0.5)),
+                                title    = paste("Q",j, " ",colnames(HRs[[q]])[j], sep=""),
+                                font.title=12,
+                                legend = "none",
+                                pval=FALSE, pval.method = F,
+                                risk.table = FALSE, 
+                                break.time.by = 7,
+                                tables.theme = theme_cleantable(), 
+                                tables.y.text = F)
+
+        splots[[j]]<- splots[[j]] + labs(x  = "Days", y = "Overall Survival")       
+}
+
+arrange_ggsurvplots(splots, ncol = 6, nrow = 1, print = TRUE)
+
+### investigate the first and last quantile
+round(prop.table(with(pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE D ATTENTE",], table(eer.initiation, quantile)),2)*100,2)
+tapply(as.numeric(with(pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE D ATTENTE",], difftime(date.eer, date.rando, units = "days"))), pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE D ATTENTE",]$quantile, summary) 
+tapply(as.numeric(with(pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE PRECOCE",], difftime(date.eer, date.rando, units = "days"))), pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE PRECOCE",]$quantile, summary) 
+
+
+## ARD at day 60
+
+ARDd60_val<-list()
+for (j in 1:q) {
+ARDd60_val[[j]]<-c((1-tail(weightedsurvivaltables(survfit.obj[[j]]$time, survfit.obj[[j]]$surv, group="B"),1)[2]),
+                         (1-tail(weightedsurvivaltables(survfit.obj[[j]]$time, survfit.obj[[j]]$surv, group="A"),1)[2]),
+                         (1-tail(weightedsurvivaltables(survfit.obj[[j]]$time, survfit.obj[[j]]$surv, group="B"),1)[2])-(1-tail(weightedsurvivaltables(survfit.obj[[j]]$time, survfit.obj[[j]]$surv, group="A"),1)[2])
+)
+}
+ARDd60_val
+ARDd60_table<-cbind(t(sapply(ARDd60_val,c)),table(pooled_po_dataset$quantile, pooled_po_dataset$bras))
+colnames(ARDd60_table)[1:3]<-c("PROP STRATEGIE PRECOCE", "PROP STRATEGIE D ATTENTE", "ARD")
+ARDd60_table
+
+ARDd60_list<-as.list(as.data.frame(t(ARDd60_table)))
+ardvar<-function(x) {(x[1]*(1-x[1])/x[5]) + (x[2]*(1-x[2])/x[4])}
+
+ARDd60_ci<-rbind(
+ARDd60_table[,"ARD"],
+ARDd60_table[,"ARD"]-qnorm(.975)*sqrt(sapply(ARDd60_list, ardvar)),
+ARDd60_table[,"ARD"]+qnorm(.975)*sqrt(sapply(ARDd60_list, ardvar))
+)
+
+plotCI(quantilemean, ARDd60_ci[1,], ui=ARDd60_ci[3,], li=ARDd60_ci[2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Absolute Risk Difference", main="Death at Day 60", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n")
+lines(c(0,.6), y=c(0,0))
+text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
+for (i in 1:length(quantilecuts)) {
+        segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
+}
+segments(0,-.35, 0, .27, lty=3)
+segments(0,ARD_overall[1], .6, ARD_overall[1], lty=2, lwd=2)
+arrows(.6, c(0.05,-0.05), .6, c(0.05+.15, -0.05-.15), length = 0.07, xpd=TRUE)
+mtext(text="favors delayed", side=4,line=0, at=0.05, cex=1, adj=0)
+mtext(text="favors early", side=4,line=-0, at=-0.05, cex=1, adj=1)
+
+
+## RR at day 60
+
+RRd60_table<-ARDd60_table
+colnames(RRd60_table)[3]<-"RR"
+RRd60_table[,3]<-ARDd60_table[,1]/ARDd60_table[,2]
+RRd60_table<-as.data.frame(RRd60_table)
+RRd60_table$DC_STRATEGIEPRECOCE<-RRd60_table[,1]*RRd60_table[,5]
+RRd60_table$DC_STRATEGIEDATTENTE<-RRd60_table[,2]*RRd60_table[,4]
+
+rrvar<-function(x) {(((x[5]-x[6])/x[6])/x[5]) + (((x[4]-x[7])/x[7])/x[4]) }
+
+RRd60_list<-as.list(as.data.frame(t(RRd60_table)))
+
+RRd60_ci<-
+exp(
+rbind(
+log(RRd60_table[,"RR"]),
+log(RRd60_table[,"RR"])-qnorm(.975)*sqrt(sapply(RRd60_list, rrvar)),
+log(RRd60_table[,"RR"])+qnorm(.975)*sqrt(sapply(RRd60_list, rrvar))
+)
+)
+
+
+plotCI(quantilemean, RRd60_ci[1,], ui=RRd60_ci[3,], li=RRd60_ci[2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Relative Risk", main="Death at Day 60", xlim=c(0, .6), ylim=c(.5,1.9), las=1, bty="n")
+lines(c(0,.6), y=c(1,1))
+text(quantilemean, 1.9, paste("Q", 1:q, sep=""), cex=.8)
+for (i in 1:length(quantilecuts)) {
+segments(quantilecuts[i],.55, quantilecuts[i], 1.8, lty=3)
+}
+segments(0,RR_overall[1], .6, RR_overall[1], lty=2, lwd=2)
+segments(0,.55, 0, 1.8, lty=3)
+arrows(.6, c(1.1,2-1.1), .6, c(1.4,2-1.4), length = 0.07, xpd=TRUE)
+mtext(text="favors delayed", side=4,line=0, at=1.1, cex=1, adj=0)
+mtext(text="favors early", side=4,line=-0, at=.9, cex=1, adj=1)
+
+## death rate at day 60
+ARDd60_table
+se_deathrate_early<-function(x) { sqrt((x[1]*(1-x[1]))/x[5]) }
+se_deathrate_late<-function(x) { sqrt((x[2]*(1-x[2]))/x[4]) }
+
+deathrate_early<-rbind(
+ARDd60_table[,1],
+ARDd60_table[,1]-qnorm(.975)*sapply(as.list(as.data.frame(t(ARDd60_table))), se_deathrate_early),
+ARDd60_table[,1]+qnorm(.975)*sapply(as.list(as.data.frame(t(ARDd60_table))), se_deathrate_early)
+)
+rownames(deathrate_early)<-c("death rate", "li", "ui")
+deathrate_early
+
+deathrate_late<-rbind(
+ARDd60_table[,2],
+ARDd60_table[,2]-qnorm(.975)*sapply(as.list(as.data.frame(t(ARDd60_table))), se_deathrate_late),
+ARDd60_table[,2]+qnorm(.975)*sapply(as.list(as.data.frame(t(ARDd60_table))), se_deathrate_late)
+)
+rownames(deathrate_late)<-c("death rate", "li", "ui")
+deathrate_late
+        
+plotCI(quantilemean+.005, deathrate_early[1,], ui=deathrate_early[3,], li=deathrate_early[2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Death Rate",xlim=c(0, .6),ylim=c(.3, .83), las=1, bty="n")
+plotCI(quantilemean-.005, deathrate_late[1,], ui=deathrate_late[3,], li=deathrate_late[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="red4", barcol="grey", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Death Rate", add=TRUE)
+segments(0,.3, 0, .8, lty=3)
+for (i in 1:length(quantilecuts)) {
+        segments(quantilecuts[i],.3, quantilecuts[i], .8, lty=3)
+}
+text(quantilemean, 0.82, paste("Q", 1:q, sep=""), cex=.8)
+
+
+### spline regression
+pooled_po_dataset
+library(mgcv)
+plot(gam(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=="STRATEGIE PRECOCE")*s(I(logit(probs))), data = pooled_po_dataset, family=cox.ph()))
+
+
+
