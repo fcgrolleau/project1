@@ -544,7 +544,7 @@ matplot(seq(0.02468, .55, by=.005), exp(matrix(yy, ncol=3)), type='l', lty=c(1,2
 abline(a=0, b=0)
 
 
-##### RCS one knot at the median (-> changed for two knots)
+##### HR RCS akiki & idealicu
 probs.int.p <- with(pooled_po_dataset, ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
 probs.int.t <- with(pooled_po_dataset, ifelse(bras=="STRATEGIE D ATTENTE", probs-0.25, 0))
 probs.c<-pooled_po_dataset$probs-.25
@@ -582,34 +582,123 @@ se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
         t(l) %*% vcov(fit.int) %*% l
 })
 
-yy <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
+yy.hr <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
 
-matplot(seq(0.02468, .55, by=.005), exp(matrix(yy, ncol=3)), type='l', lty=c(1,2,2),
+matplot(seq(0.02468, .55, by=.005), exp(matrix(yy.hr, ncol=3)), type='l', lty=c(1,2,2),
+        lwd=2, col=1, log='y',
+        xlab="Probs", ylab="Relative risk")
+abline(a=0, b=0)
+
+##### HR RCS akiki
+probs.int.p <- with(pooled_po_dataset[pooled_po_dataset$etude=="akiki",], ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
+probs.int.t <- with(pooled_po_dataset[pooled_po_dataset$etude=="akiki",], ifelse(bras=="STRATEGIE D ATTENTE", probs-0.25, 0))
+probs.c<-pooled_po_dataset[pooled_po_dataset$etude=="akiki",]$probs-.25
+
+dfs<-3
+#kn <- quantile(probs.c, seq(0,1,length=dfs)[-c(1,dfs)])
+kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+rg <-range(probs.c)
+library(splines)
+fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
+
+fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
+
+ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
+        lwd=2, log='y',
+        xlab="Probs", ylab="Relative risk")
+
+
+y0.precoce_<-data.frame(bras = 1, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(0, knots = kn, Boundary.knots=rg))
+y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg))
+
+
+l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+  matrix(y0.precoce_[i,] - y0.tardif_[i,]) })
+
+l<-matrix(as.numeric(l), nrow(l), 106)
+
+fits<-as.numeric(t(l) %*% coef(fit.int))
+se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+  l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
+  t(l) %*% vcov(fit.int) %*% l
+})
+
+yy.hr.akiki <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
+
+matplot(seq(0.02468, .55, by=.005), exp(matrix(yy.hr.akiki, ncol=3)), type='l', lty=c(1,2,2),
+        lwd=2, col=1, log='y',
+        xlab="Probs", ylab="Relative risk")
+abline(a=0, b=0)
+
+##### HR RCS idealicu
+probs.int.p <- with(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
+probs.int.t <- with(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], ifelse(bras=="STRATEGIE D ATTENTE", probs-0.25, 0))
+probs.c<-pooled_po_dataset[pooled_po_dataset$etude=="idealicu",]$probs-.25
+
+dfs<-3
+#kn <- quantile(probs.c, seq(0,1,length=dfs)[-c(1,dfs)])
+kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+rg <-range(probs.c)
+library(splines)
+fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
+
+fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
+
+ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
+        lwd=2, log='y',
+        xlab="Probs", ylab="Relative risk")
+
+
+y0.precoce_<-data.frame(bras = 1, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(0, knots = kn, Boundary.knots=rg))
+y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg))
+
+
+l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+  matrix(y0.precoce_[i,] - y0.tardif_[i,]) })
+
+l<-matrix(as.numeric(l), nrow(l), 106)
+
+fits<-as.numeric(t(l) %*% coef(fit.int))
+se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
+  l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
+  t(l) %*% vcov(fit.int) %*% l
+})
+
+yy.hr.idealicu <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
+
+matplot(seq(0.02468, .55, by=.005), exp(matrix(yy.hr.idealicu, ncol=3)), type='l', lty=c(1,2,2),
         lwd=2, col=1, log='y',
         xlab="Probs", ylab="Relative risk")
 abline(a=0, b=0)
 
 
 ## HR plot
-dev.off()
-plot(1, xlim=c(0, .6), ylim = c(.4,2.5), yaxt="n", bty="n", type="n", log="y", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Hazard Ratio", main="60 Days Survival")
-axis(2, at=c(1,seq(0.5,2.5,by=0.5)),las=1) #, labels=NA)
+plot(1, xlim=c(0, .6), ylim = c(.3,3.7), yaxt="n", bty="n", type="n", log="y", xlab="", ylab="Hazard Ratio")
+axis(2, at=c(1,seq(0.3,3.8,by=0.5)),las=1)
 lines(c(0,.6), y=c(1,1), lwd=2)
 segments(0,HR_overall[1], .6, HR_overall[1], lty=2, lwd=2)
-plotCI(quantilemean, HRs[[q]][1,], ui=HRs[[q]][3,], li=HRs[[q]][2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", add=TRUE, las=1, bty="n")
+plotCI(quantilemean, HRs[[q]][1,], ui=HRs[[q]][3,], li=HRs[[q]][2,], pch=15, gap=0, sfrac=0.003, col="#b24745", barcol="black", add=TRUE, las=1, bty="n")
 #plotCI(quantilemean, HRs[[q]][1,], ui=HRs[[q]][3,], li=HRs[[q]][2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Hazard Ratio", main="60 Days Survival", xlim=c(0, .6), ylim = c(.4,2.3))
 for (i in 1:length(quantilecuts)) {
-        segments(quantilecuts[i],.45, quantilecuts[i], 2.2, lty=3)
+  segments(quantilecuts[i],.3, quantilecuts[i], 3.7, lty=3)
 }
-segments(0,.45, 0, 2.2, lty=3)
-text(quantilemean, 2.3, paste("Q", 1:q, sep=""), cex=.8)
-arrows(.6, c(1.05,1/1.05), .6, c(1.05+.4, 1/(1.05+.4)), length = 0.07, xpd=TRUE)
-mtext(text="favors delayed", side=4,line=0, at=1.05, cex=1, adj=0)
-mtext(text="favors early", side=4,line=-0, at=2-1.05, cex=1, adj=1)
+segments(0,.3, 0, 3.7, lty=3)
+#text(quantilemean, 3.8, paste("Q", 1:q, sep=""), cex=.8)
+#arrows(.6, c(1.05,1/1.05), .6, c(1.05+.4, 1/(1.05+.4)), length = 0.07, xpd=TRUE)
+#mtext(text="favors delayed", side=4,line=0, at=1.05, cex=1, adj=0)
+#mtext(text="favors early", side=4,line=-0, at=2-1.05, cex=1, adj=1)
 
-points(seq(0.02468, .55, by=.005), exp(yy[,1]), type = 'l', lwd=1.2,col="#6A6599FF")
-polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(yy[,2]), rev(exp(yy[,3]))),
-        col= rgb(0, .1,.5,0.15), border=NA)
+points(seq(0.02468, .55, by=.005), exp(yy.hr[,1]), type = 'l', lwd=1.2,col="#b24745")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(yy.hr[,2]), rev(exp(yy.hr[,3]))),
+        col= rgb(223,143,68, alpha = 38, maxColorValue=255), border=NA)
 #dev.copy2pdf(file="hrplot.pdf")
 
 #points(seq(0.02468, .55, by=.005), exp(dplot$b.precoce), type = 'l', lwd=1.2, col="#6A6599FF")
@@ -731,6 +820,45 @@ for (i in 3:10) {
 q<-5
 
 
+## HR plot : akiki
+plot(1, xlim=c(0, .6), ylim = c(.3,3.7), yaxt="n", bty="n", type="n", log="y", xlab="", ylab="")
+axis(2, at=c(1,seq(0.3,3.8,by=0.5)),las=1) #, labels=NA)
+lines(c(0,.6), y=c(1,1), lwd=2)
+segments(0,HR_overall_akiki[1], .6, HR_overall_akiki[1], lty=2, lwd=2)
+plotCI(quantilemean, HRs_akiki[[q]][1,], ui=HRs_akiki[[q]][3,], li=HRs_akiki[[q]][2,], pch=15, gap=0, sfrac=0.003, col="#b24745", barcol="black", add=TRUE, las=1, bty="n")
+for (i in 1:length(quantilecuts)) {
+  segments(quantilecuts[i],.3, quantilecuts[i], 3.7, lty=3)
+}
+segments(0,.3, 0, 3.7, lty=3)
+#text(quantilemean, 2.3, paste("Q", 1:q, sep=""), cex=.8)
+#arrows(.6, c(1.05,1/1.05), .6, c(1.05+1.25, 1/(1.05+1.25)), length = 0.07, xpd=TRUE)
+#mtext(text="favors delayed", side=4,line=0, at=1.05, cex=2/3, adj=0)
+#mtext(text="favors early", side=4,line=-0, at=2-1.05, cex=2/3, adj=1)
+
+points(seq(0.02468, .55, by=.005), exp(yy.hr.akiki[,1]), type = 'l', lwd=1.2,col="#b24745")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(yy.hr.akiki[,2]), rev(exp(yy.hr.akiki[,3]))),
+        col= rgb(223,143,68, alpha = 38, maxColorValue=255), border=NA)
+
+## HR plot : idealicu
+plot(1, xlim=c(0, .6), ylim = c(.3,3.7), yaxt="n", bty="n", type="n", log="y", xlab="", ylab="")
+axis(2, at=c(1,seq(0.3,3.8,by=0.5)),las=1) #, labels=NA)
+lines(c(0,.6), y=c(1,1), lwd=2)
+segments(0,HR_overall_idealicu[1], .6, HR_overall_idealicu[1], lty=2, lwd=2)
+plotCI(quantilemean, HRs_idealicu[[q]][1,], ui=HRs_idealicu[[q]][3,], li=HRs_idealicu[[q]][2,], pch=15, gap=0, sfrac=0.003, col="#b24745", barcol="black", add=TRUE, las=1, bty="n")
+for (i in 1:length(quantilecuts)) {
+  segments(quantilecuts[i],.3, quantilecuts[i], 3.7, lty=3)
+}
+segments(0,.3, 0, 3.7, lty=3)
+#text(quantilemean, 2.3, paste("Q", 1:q, sep=""), cex=.8)
+arrows(.6, c(1.05,1/1.05), .6, c(1.05+1.25, 1/(1.05+1.25)), length = 0.07, xpd=TRUE)
+mtext(text="favors delayed", side=4,line=0, at=1.05, cex=2/3, adj=0)
+mtext(text="favors early", side=4,line=-0, at=2-1.05, cex=2/3, adj=1)
+
+points(seq(0.02468, .55, by=.005), exp(yy.hr.idealicu[,1]), type = 'l', lwd=1.2,col="#b24745")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c(exp(yy.hr.idealicu[,2]), rev(exp(yy.hr.idealicu[,3]))),
+        col= rgb(223,143,68, alpha = 38, maxColorValue=255), border=NA)
+
+
 ### investigate the first and last quantile
 round(prop.table(with(pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE D ATTENTE",], table(eer.initiation, quantile)),2)*100,2)
 tapply(as.numeric(with(pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE D ATTENTE",], difftime(date.eer, date.rando, units = "days"))), pooled_po_dataset[pooled_po_dataset$bras=="STRATEGIE D ATTENTE",]$quantile, function(x) 24*summary (x)[3]) 
@@ -839,39 +967,39 @@ y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, 
 y0.precoce_bis<-data.frame(bras="STRATEGIE PRECOCE", y0.precoce_[,-1])
 #colnames(y0.precoce_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.precoce_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-precoced60d<-1-survfit(fit.int, newdata=y0.precoce_bis)$surv[56,]
+precoced60d_pooled<-1-survfit(fit.int, newdata=y0.precoce_bis)$surv[56,]
 
 y0.tardif_bis<-data.frame(bras="STRATEGIE D ATTENTE", y0.tardif_[,-1])
 #colnames(y0.tardif_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.tardif_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-tardifd60d<-1-survfit(fit.int, newdata=y0.tardif_bis)$surv[56,]
+tardifd60d_pooled<-1-survfit(fit.int, newdata=y0.tardif_bis)$surv[56,]
 
-se_s<-ardbootfunction(dataset=pooled_po_dataset, nboot = 1000)
+se_s_pooled<-ardbootfunction(dataset=pooled_po_dataset, nboot = 1000)
 
-plot(seq(0.02468, .55, by=.005), precoced60d-tardifd60d, type="l", ylim=c(-.2,.2))
+plot(seq(0.02468, .55, by=.005), precoced60d_pooled-tardifd60d_pooled, type="l", ylim=c(-.2,.2))
 abline(a=0,b=0)
-lines(seq(0.02468, .55, by=.005), (precoced60d-tardifd60d)-qnorm(.975)*se_s, lty=2)
-lines(seq(0.02468, .55, by=.005), (precoced60d-tardifd60d)+qnorm(.975)*se_s, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_pooled-tardifd60d_pooled)-qnorm(.975)*se_s_pooled, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_pooled-tardifd60d_pooled)+qnorm(.975)*se_s_pooled, lty=2)
 
 
 ### ARD plot
 dev.off()
-plotCI(quantilemean, ARDd60_ci[1,], ui=ARDd60_ci[3,], li=ARDd60_ci[2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Absolute Risk Difference", main="Death at Day 60", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n")
+plotCI(quantilemean, ARDd60_ci[1,], ui=ARDd60_ci[3,], li=ARDd60_ci[2,], pch=15, gap=0, sfrac=0.003, col="#b24745", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Absolute Risk Reduction", main="", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n")
 lines(c(0,.6), y=c(0,0))
-text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
+#text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
 for (i in 1:length(quantilecuts)) {
-        segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
+  segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
 }
 segments(0,-.35, 0, .27, lty=3)
 segments(0,ARD_overall[1], .6, ARD_overall[1], lty=2, lwd=2)
-arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
-mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
-mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1, adj=1)
+#arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
+#mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
+#mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1, adj=1)
 
-points(seq(0.02468, .55, by=.005), precoced60d-tardifd60d, type = 'l', lwd=1.2,col="#6A6599FF")
-polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((precoced60d-tardifd60d)+qnorm(.975)*se_s,
-                                                                           rev((precoced60d-tardifd60d)-qnorm(.975)*se_s)),
-        col= rgb(0, .1,.5,0.15), border=NA)
+points(seq(0.02468, .55, by=.005), precoced60d_pooled-tardifd60d_pooled, type = 'l', lwd=1.2,col="#b24745")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((precoced60d_pooled-tardifd60d_pooled)+qnorm(.975)*se_s_pooled,
+                                                                          rev((precoced60d_pooled-tardifd60d_pooled)-qnorm(.975)*se_s_pooled)),
+        col= rgb(223,143,68, alpha = 38, maxColorValue=255), border=NA)
 #dev.copy2pdf(file="ardplotq5.pdf")
 
 
@@ -905,42 +1033,42 @@ y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, 
 y0.precoce_bis<-data.frame(bras="STRATEGIE PRECOCE", y0.precoce_[,-1])
 #colnames(y0.precoce_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.precoce_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-precoced60d<-1-tail(survfit(fit.int, newdata=y0.precoce_bis)$surv,1)
+precoced60d_akiki<-1-tail(survfit(fit.int, newdata=y0.precoce_bis)$surv,1)
 
 y0.tardif_bis<-data.frame(bras="STRATEGIE D ATTENTE", y0.tardif_[,-1])
 #colnames(y0.tardif_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.tardif_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-tardifd60d<-1-tail(survfit(fit.int, newdata=y0.tardif_bis)$surv,1)
+tardifd60d_akiki<-1-tail(survfit(fit.int, newdata=y0.tardif_bis)$surv,1)
 
 # caution: function wroks only with two knots at position 0.13143840 & 0.32789328
 # for more knots or different knots positions function adjustment is needed
 
-se_s<-ardbootfunction(dataset=pooled_po_dataset[pooled_po_dataset$etude=="akiki",], nboot = 1000)
+se_s_akiki<-ardbootfunction(dataset=pooled_po_dataset[pooled_po_dataset$etude=="akiki",], nboot = 1000)
 
-plot(seq(0.02468, .55, by=.005), precoced60d-tardifd60d, type="l", ylim=c(-.2,.2))
+plot(seq(0.02468, .55, by=.005), precoced60d_akiki-tardifd60d_akiki, type="l", ylim=c(-.2,.2))
 abline(a=0,b=0)
-lines(seq(0.02468, .55, by=.005), (precoced60d-tardifd60d)-qnorm(.975)*se_s, lty=2)
-lines(seq(0.02468, .55, by=.005), (precoced60d-tardifd60d)+qnorm(.975)*se_s, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_akiki-tardifd60d_akiki)-qnorm(.975)*se_s_akiki, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_akiki-tardifd60d_akiki)+qnorm(.975)*se_s_akiki, lty=2)
 
 
 ### ARD plot : AKIKI subanalysis : RCS two knots for ARD
 dev.off()
-plotCI(quantilemean, ARDd60_ci_akiki[1,], ui=ARDd60_ci_akiki[3,], li=ARDd60_ci_akiki[2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Absolute Risk Difference", main="Death at Day 60 in AKIKI", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n")
+plotCI(quantilemean, ARDd60_ci_akiki[1,], ui=ARDd60_ci_akiki[3,], li=ARDd60_ci_akiki[2,], pch=15, gap=0, sfrac=0.003, col="#b24745", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="", main="", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n")
 lines(c(0,.6), y=c(0,0))
-text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
+#text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
 for (i in 1:length(quantilecuts)) {
   segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
 }
 segments(0,-.35, 0, .27, lty=3)
 segments(0,ARD_overall_akiki[1], .6, ARD_overall_akiki[1], lty=2, lwd=2)
-arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
-mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
-mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1, adj=1)
+#arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
+#mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
+#mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1, adj=1)
 
-points(seq(0.02468, .55, by=.005), precoced60d-tardifd60d, type = 'l', lwd=1.2,col="#6A6599FF")
-polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((precoced60d-tardifd60d)+qnorm(.975)*se_s,
-                                                                          rev((precoced60d-tardifd60d)-qnorm(.975)*se_s)),
-        col= rgb(0, .1,.5,0.15), border=NA)
+points(seq(0.02468, .55, by=.005), precoced60d_akiki-tardifd60d_akiki, type = 'l', lwd=1.2,col="#b24745")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((precoced60d_akiki-tardifd60d_akiki)+qnorm(.975)*se_s_akiki,
+                                                                          rev((precoced60d_akiki-tardifd60d_akiki)-qnorm(.975)*se_s_akiki)),
+        col= rgb(223,143,68, alpha = 38, maxColorValue=255), border=NA)
 
 
 ##### IDEALICU subanalysis : RCS two knots for ARD
@@ -971,42 +1099,42 @@ y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, 
 y0.precoce_bis<-data.frame(bras="STRATEGIE PRECOCE", y0.precoce_[,-1])
 #colnames(y0.precoce_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.precoce_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-precoced60d<-1-tail(survfit(fit.int, newdata=y0.precoce_bis)$surv,1)
+precoced60d_idealicu<-1-tail(survfit(fit.int, newdata=y0.precoce_bis)$surv,1)
 
 y0.tardif_bis<-data.frame(bras="STRATEGIE D ATTENTE", y0.tardif_[,-1])
 #colnames(y0.tardif_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.tardif_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-tardifd60d<-1-tail(survfit(fit.int, newdata=y0.tardif_bis)$surv,1)
+tardifd60d_idealicu<-1-tail(survfit(fit.int, newdata=y0.tardif_bis)$surv,1)
 
 # caution: function wroks only with two knots at position 0.13143840 & 0.32789328
 # for more knots or different knots positions function adjustment is needed
 
-se_s<-ardbootfunction(dataset=pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], nboot = 1000)
+se_s_idealicu<-ardbootfunction(dataset=pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], nboot = 1000)
 
-plot(seq(0.02468, .55, by=.005), precoced60d-tardifd60d, type="l", ylim=c(-.2,.2))
+plot(seq(0.02468, .55, by=.005), precoced60d_idealicu-tardifd60d_idealicu, type="l", ylim=c(-.2,.2))
 abline(a=0,b=0)
-lines(seq(0.02468, .55, by=.005), (precoced60d-tardifd60d)-qnorm(.975)*se_s, lty=2)
-lines(seq(0.02468, .55, by=.005), (precoced60d-tardifd60d)+qnorm(.975)*se_s, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_idealicu-tardifd60d_idealicu)-qnorm(.975)*se_s, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_idealicu-tardifd60d_idealicu)+qnorm(.975)*se_s, lty=2)
 
 
 ### ARD plot : IDEALICU subanalysis : RCS two knots for ARD
 dev.off()
-plotCI(quantilemean, ARDd60_ci_idealicu[1,], ui=ARDd60_ci_idealicu[3,], li=ARDd60_ci_idealicu[2,], pch=18, gap=0, sfrac=0.003, col="blue4", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Absolute Risk Difference", main="Death at Day 60 in IDEAL-ICU", xlim=c(0, .6), ylim=c(-.35,.35), las=1, bty="n")
+plotCI(quantilemean, ARDd60_ci_idealicu[1,], ui=ARDd60_ci_idealicu[3,], li=ARDd60_ci_idealicu[2,], pch=15, gap=0, sfrac=0.003, col="#b24745", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="", main="", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n")
 lines(c(0,.6), y=c(0,0))
-text(quantilemean, 0.35, paste("Q", 1:q, sep=""), cex=.8)
+#text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
 for (i in 1:length(quantilecuts)) {
-  segments(quantilecuts[i],-.35, quantilecuts[i], .33, lty=3)
+  segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
 }
 segments(0,-.35, 0, .27, lty=3)
 segments(0,ARD_overall_idealicu[1], .6, ARD_overall_idealicu[1], lty=2, lwd=2)
 arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
-mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
-mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1, adj=1)
+mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1/2, adj=0)
+mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1/2, adj=1)
 
-points(seq(0.02468, .55, by=.005), precoced60d-tardifd60d, type = 'l', lwd=1.2,col="#6A6599FF")
-polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((precoced60d-tardifd60d)+qnorm(.975)*se_s,
-                                                                          rev((precoced60d-tardifd60d)-qnorm(.975)*se_s)),
-        col= rgb(0, .1,.5,0.15), border=NA)
+points(seq(0.02468, .55, by=.005), precoced60d_idealicu-tardifd60d_idealicu, type = 'l', lwd=1.2,col="#b24745")
+polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((precoced60d_idealicu-tardifd60d_idealicu)+qnorm(.975)*se_s_idealicu,
+                                                                          rev((precoced60d_idealicu-tardifd60d_idealicu)-qnorm(.975)*se_s_idealicu)),
+        col= rgb(223,143,68, alpha = 38, maxColorValue=255), border=NA)
 
 
 ## RR at day 60
@@ -1091,10 +1219,10 @@ ypred$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PR
 ypred2$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
 ypred2$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
 
-yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
-yy2<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy.er <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2.er<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 
-matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy,yy2), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
+#matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy,yy2), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
 
 # akiki
 probs.int.p <- with(pooled_po_dataset[pooled_po_dataset$etude=="akiki",], ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
@@ -1119,10 +1247,10 @@ ypred$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PR
 ypred2$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
 ypred2$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
 
-yy.akiki <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
-yy2.akiki <- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy.er.akiki <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2.er.akiki <- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 
-matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.akiki,yy2.akiki), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
+#matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.akiki,yy2.akiki), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
 
 # idealicu
 probs.int.p <- with(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
@@ -1150,10 +1278,10 @@ ypred$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PR
 ypred2$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
 ypred2$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
 
-yy.idealicu <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
-yy2.idealicu <- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy.er.idealicu <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
+yy2.er.idealicu <- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 
-matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.idealicu,yy2.idealicu), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
+#matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.idealicu,yy2.idealicu), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
 
 
 ## accurate event rate tables in pooled studies and subanalysis
@@ -1241,50 +1369,55 @@ rownames(deathrate_late.idealicu)<-c("death rate", "li", "ui")
 
 ## event rate plot        
 # pooled
-plotCI(quantilemean+.005, deathrate_early[1,], ui=deathrate_early[3,], li=deathrate_early[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="60 Days Death Rate",xlim=c(0, .6),ylim=c(.3, .83), las=1, bty="n")
-plotCI(quantilemean-.005, deathrate_late[1,], ui=deathrate_late[3,], li=deathrate_late[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="#b24745", barcol="grey", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Death Rate", add=TRUE)
+plotCI(quantilemean+.005, deathrate_early[1,], ui=deathrate_early[3,], li=deathrate_early[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="", ylab="60 Days Death Rate",xlim=c(0, .6),ylim=c(.1, .83), yaxt="n", bty="n", main="AKIKI & IDEAL-ICU")
+plotCI(quantilemean-.005, deathrate_late[1,], ui=deathrate_late[3,], li=deathrate_late[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="#b24745", barcol="grey", xlab="", ylab="", add=TRUE)
 
-segments(0,.3, 0, .8, lty=3)
+axis(2, at=seq(.1,.8, by=.1), las=1)
+
+segments(0,.1, 0, .8, lty=3)
 for (i in 1:length(quantilecuts)) {
-  segments(quantilecuts[i],.3, quantilecuts[i], .8, lty=3)
+  segments(quantilecuts[i],.1, quantilecuts[i], .8, lty=3)
 }
-text(quantilemean, 0.82, paste("Q", 1:q, sep=""), cex=.8)
+text(quantilemean, 0.83, paste("Q", 1:q, sep=""), cex=.8)
 
-lines(seq(0.02468, .55, by=.005), yy[,1], col="#00a1d5")
-lines(seq(0.02468, .55, by=.005), yy2[,1], col="#b24745")
+lines(seq(0.02468, .55, by=.005), yy.er[,1], col="#00a1d5")
+lines(seq(0.02468, .55, by=.005), yy2.er[,1], col="#b24745")
 
-legend(.5, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
-       lty=c(1,1), pch=c(18, 4), col=c("#00a1d5", "#b24745"), lwd=1, box.lty=0, cex=.7)
+#legend(.5, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
+#       lty=c(1,1), pch=c(18, 4), col=c("#00a1d5", "#b24745"), lwd=1, box.lty=0, cex=.7)
 
 # akiki
-plotCI(quantilemean+.005, deathrate_early.akiki[1,], ui=deathrate_early.akiki[3,], li=deathrate_early.akiki[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="60 Days Death Rate",xlim=c(0, .6),ylim=c(.2, .83), las=1, bty="n")
-plotCI(quantilemean-.005, deathrate_late.akiki[1,], ui=deathrate_late.akiki[3,], li=deathrate_late.akiki[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="#b24745", barcol="grey", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Death Rate", add=TRUE)
+plotCI(quantilemean+.005, deathrate_early.akiki[1,], ui=deathrate_early.akiki[3,], li=deathrate_early.akiki[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="", ylab="",xlim=c(0, .6),ylim=c(.1, .83), yaxt="n", bty="n", main="AKIKI")
+plotCI(quantilemean-.005, deathrate_late.akiki[1,], ui=deathrate_late.akiki[3,], li=deathrate_late.akiki[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="#b24745", barcol="grey", xlab="", ylab="", add=TRUE)
 
-segments(0,.3, 0, .8, lty=3)
+axis(2, at=seq(.1,.8, by=.1), las=1)
+
+segments(0,.1, 0, .8, lty=3)
 for (i in 1:length(quantilecuts)) {
-  segments(quantilecuts[i],.3, quantilecuts[i], .8, lty=3)
+  segments(quantilecuts[i],.1, quantilecuts[i], .8, lty=3)
 }
-text(quantilemean, 0.82, paste("Q", 1:q, sep=""), cex=.8)
+text(quantilemean, 0.83, paste("Q", 1:q, sep=""), cex=.8)
 
-lines(seq(0.02468, .55, by=.005), yy.akiki[,1], col="#00a1d5")
-lines(seq(0.02468, .55, by=.005), yy2.akiki[,1], col="#b24745")
+lines(seq(0.02468, .55, by=.005), yy.er.akiki[,1], col="#00a1d5")
+lines(seq(0.02468, .55, by=.005), yy2.er.akiki[,1], col="#b24745")
 
-legend(.5, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
-       lty=c(1,1), pch=c(18, 4), col=c("#00a1d5", "#b24745"), lwd=1, box.lty=0, cex=.7)
+#legend(.5, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
+#       lty=c(1,1), pch=c(18, 4), col=c("#00a1d5", "#b24745"), lwd=1, box.lty=0, cex=.7)
 
 # idealicu
-plotCI(quantilemean+.005, deathrate_early.idealicu[1,], ui=deathrate_early.idealicu[3,], li=deathrate_early.idealicu[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="60 Days Death Rate",xlim=c(0, .6),ylim=c(.2, .83), las=1, bty="n")
-plotCI(quantilemean-.005, deathrate_late.idealicu[1,], ui=deathrate_late.idealicu[3,], li=deathrate_late.idealicu[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="#b24745", barcol="grey", xlab="Predicted Probability of RRT Initiation Within 48 hours", ylab="Death Rate", add=TRUE)
+plotCI(quantilemean+.005, deathrate_early.idealicu[1,], ui=deathrate_early.idealicu[3,], li=deathrate_early.idealicu[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="", ylab="",xlim=c(0, .6),ylim=c(.1, .83), yaxt="n", bty="n", main="IDEAL-ICU")
+plotCI(quantilemean-.005, deathrate_late.idealicu[1,], ui=deathrate_late.idealicu[3,], li=deathrate_late.idealicu[2,], pch=4,cex=.8, gap=0, sfrac=0.003, col="#b24745", barcol="grey", xlab="", ylab="", add=TRUE)
+axis(2, at=seq(.1,.8, by=.1), las=1)
 
-segments(0,.3, 0, .8, lty=3)
+segments(0,.1, 0, .8, lty=3)
 for (i in 1:length(quantilecuts)) {
-  segments(quantilecuts[i],.3, quantilecuts[i], .8, lty=3)
+  segments(quantilecuts[i],.1, quantilecuts[i], .8, lty=3)
 }
-text(quantilemean, 0.82, paste("Q", 1:q, sep=""), cex=.8)
+text(quantilemean, 0.83, paste("Q", 1:q, sep=""), cex=.8)
 
-lines(seq(0.02468, .55, by=.005), yy.idealicu[,1], col="#00a1d5")
-lines(seq(0.02468, .55, by=.005), yy2.idealicu[,1], col="#b24745")
+lines(seq(0.02468, .55, by=.005), yy.er.idealicu[,1], col="#00a1d5")
+lines(seq(0.02468, .55, by=.005), yy2.er.idealicu[,1], col="#b24745")
 
-legend(.5, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
+legend(.4, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
        lty=c(1,1), pch=c(18, 4), col=c("#00a1d5", "#b24745"), lwd=1, box.lty=0, cex=.7)
 
