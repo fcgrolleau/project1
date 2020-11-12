@@ -77,7 +77,7 @@ meth <- imp$method
 set.seed(123)
 imp_pooled_tardif<-mice(rcts2[rcts2$bras=="STRATEGIE D ATTENTE",], m=5, seed = 1, predictorMatrix = predM, method = meth)
 imp_pooled_precoce<-mice(rcts2[rcts2$bras=="STRATEGIE PRECOCE",], m=5, seed = 1, predictorMatrix = predM, method = meth)
-save.image("imputedpooleddata2.RData")
+#save.image("imputedpooleddata2.RData")
 load("imputedpooleddata2.RData")
 
 ## Selection in each imputed (We'll have to do AIC-like backward slection on pooled Wald tests with cut-off p=0.157)

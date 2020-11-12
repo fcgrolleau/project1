@@ -51,5 +51,5 @@ apply(ardmat, 2, function(x) sd(x))
 }
 
 
-ardbootfunction(pooled_po_dataset, nboot = 100)
-plot(ardbootfunction(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], nboot = 100), type="l")
+#ardbootfunction(pooled_po_dataset, nboot = 100)
+#plot(ardbootfunction(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], nboot = 100), type="l")
