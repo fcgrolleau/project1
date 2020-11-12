@@ -176,8 +176,26 @@ apply(matselvar,2,sum)*20 # Percent selection of each variable
 
        
 # final model
-finalmodel<-summary(pool(with(imp_pooled_tardif, glm(I(event=="EERm") ~  pot_e + sofa_e + weight_e + immunosupressive_drug +
-                                                             urea_e + ph_e, family="binomial"))))
+final.mi<-with(imp_pooled_tardif, glm(I(event=="EERm") ~  pot_e + sofa_e + weight_e + immunosupressive_drug +
+                              urea_e + ph_e, family="binomial"))
+finalmodel.pooled<-pool(final.mi)
+finalmodel<-summary(finalmodel.pooled)
+
+# get variance covariance matrix from final model
+m <- finalmodel.pooled$m
+ubar <- Reduce("+", lapply(final.mi$analyses, vcov)) / (m)
+b <- finalmodel.pooled$pooled$b # this one is still provided by mice
+
+# # or by hand as well
+#qbar <- getqbar(finalmodel.pooled)  # pooled estimates  
+#1 / (m-1) * rowSums((sapply(final.mi$analyses, coef) - qbar)^2)
+
+t_finalmodel_vcov <- ubar + (1 + 1 / (m)) * b  # this is t as it used to be
+
+# check versus the diagonal of t that is still provided
+all.equal(as.numeric(diag(t_finalmodel_vcov)), finalmodel.pooled$pooled$t) # All true->check
+#
+
 finalmodel
 final.table<-cbind(
         #as.character(fullmodel[-c(1,nrow(fullmodel)),1]),
@@ -556,10 +574,10 @@ rg <-range(probs.c)
 library(splines)
 fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
 
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
+fit.int.hr<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
 
-ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
-ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+ypred<-predict(fit.int.hr, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int.hr, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
 yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 yy2<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
@@ -576,10 +594,10 @@ l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
 
 l<-matrix(as.numeric(l), nrow(l), 106)
 
-fits<-as.numeric(t(l) %*% coef(fit.int))
+fits<-as.numeric(t(l) %*% coef(fit.int.hr))
 se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
         l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
-        t(l) %*% vcov(fit.int) %*% l
+        t(l) %*% vcov(fit.int.hr) %*% l
 })
 
 yy.hr <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
@@ -601,10 +619,10 @@ rg <-range(probs.c)
 library(splines)
 fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
 
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
+fit.int.hr.akiki<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
 
-ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
-ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+ypred<-predict(fit.int.hr.akiki, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int.hr.akiki, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
 yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 yy2<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
@@ -621,10 +639,10 @@ l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
 
 l<-matrix(as.numeric(l), nrow(l), 106)
 
-fits<-as.numeric(t(l) %*% coef(fit.int))
+fits<-as.numeric(t(l) %*% coef(fit.int.hr.akiki))
 se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
   l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
-  t(l) %*% vcov(fit.int) %*% l
+  t(l) %*% vcov(fit.int.hr.akiki) %*% l
 })
 
 yy.hr.akiki <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
@@ -641,15 +659,16 @@ probs.c<-pooled_po_dataset[pooled_po_dataset$etude=="idealicu",]$probs-.25
 
 dfs<-3
 #kn <- quantile(probs.c, seq(0,1,length=dfs)[-c(1,dfs)])
-kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+#kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+kn<-c(0.45, 0.5)-.25 # knots at different position for that one
 rg <-range(probs.c)
 library(splines)
 fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
 
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
+fit.int.hr.idealicu<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
 
-ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
-ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+ypred<-predict(fit.int.hr.idealicu, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int.hr.idealicu, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
 yy <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 yy2<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 matplot(seq(0.02468, .55, by=.005), exp(matrix(cbind(yy,yy2), ncol=6)), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2),
@@ -666,10 +685,10 @@ l<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
 
 l<-matrix(as.numeric(l), nrow(l), 106)
 
-fits<-as.numeric(t(l) %*% coef(fit.int))
+fits<-as.numeric(t(l) %*% coef(fit.int.hr.idealicu))
 se_s<-sapply(1:length(seq(0.02468, .55, by=.005)), function(i){
   l = as.numeric(y0.precoce_[i,] - y0.tardif_[i,])
-  t(l) %*% vcov(fit.int) %*% l
+  t(l) %*% vcov(fit.int.hr.idealicu) %*% l
 })
 
 yy.hr.idealicu <- fits + outer(sqrt(se_s), c(0, -qnorm(.975), qnorm(.975)), '*')
@@ -817,7 +836,8 @@ for (i in 3:10) {
   abline(h=1)
 }
 
-q<-5
+# Stay with 5 quantiles
+pooled_po_dataset$quantile<-quantcut(pooled_po_dataset$probs, seq(0,1,by=1/5))
 
 
 ## HR plot : akiki
@@ -959,7 +979,7 @@ b3<-ns(probs.int.t, knots = kn, Boundary.knots=rg)[,3]
 
 
 #fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+b1+b2, data = pooled_po_dataset, x=TRUE)
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+a3+b1+b2+b3, data = pooled_po_dataset, x=TRUE)
+fit.int.ard<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+a3+b1+b2+b3, data = pooled_po_dataset, x=TRUE)
 
 y0.precoce_<-data.frame(bras = 1, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(0, knots = kn, Boundary.knots=rg))
 y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg))
@@ -967,12 +987,12 @@ y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, 
 y0.precoce_bis<-data.frame(bras="STRATEGIE PRECOCE", y0.precoce_[,-1])
 #colnames(y0.precoce_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.precoce_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-precoced60d_pooled<-1-survfit(fit.int, newdata=y0.precoce_bis)$surv[56,]
+precoced60d_pooled<-1-survfit(fit.int.ard, newdata=y0.precoce_bis)$surv[56,]
 
 y0.tardif_bis<-data.frame(bras="STRATEGIE D ATTENTE", y0.tardif_[,-1])
 #colnames(y0.tardif_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.tardif_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-tardifd60d_pooled<-1-survfit(fit.int, newdata=y0.tardif_bis)$surv[56,]
+tardifd60d_pooled<-1-survfit(fit.int.ard, newdata=y0.tardif_bis)$surv[56,]
 
 se_s_pooled<-ardbootfunction(dataset=pooled_po_dataset, nboot = 1000)
 
@@ -1025,7 +1045,7 @@ b3<-ns(probs.int.t, knots = kn, Boundary.knots=rg)[,3]
 
 
 #fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+b1+b2, data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+a3+b1+b2+b3, data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
+fit.int.ard.akiki<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+a3+b1+b2+b3, data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
 
 y0.precoce_<-data.frame(bras = 1, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(0, knots = kn, Boundary.knots=rg))
 y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg))
@@ -1033,12 +1053,12 @@ y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, 
 y0.precoce_bis<-data.frame(bras="STRATEGIE PRECOCE", y0.precoce_[,-1])
 #colnames(y0.precoce_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.precoce_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-precoced60d_akiki<-1-tail(survfit(fit.int, newdata=y0.precoce_bis)$surv,1)
+precoced60d_akiki<-1-tail(survfit(fit.int.ard.akiki, newdata=y0.precoce_bis)$surv,1)
 
 y0.tardif_bis<-data.frame(bras="STRATEGIE D ATTENTE", y0.tardif_[,-1])
 #colnames(y0.tardif_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.tardif_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-tardifd60d_akiki<-1-tail(survfit(fit.int, newdata=y0.tardif_bis)$surv,1)
+tardifd60d_akiki<-1-tail(survfit(fit.int.ard.akiki, newdata=y0.tardif_bis)$surv,1)
 
 # caution: function wroks only with two knots at position 0.13143840 & 0.32789328
 # for more knots or different knots positions function adjustment is needed
@@ -1078,7 +1098,8 @@ probs.c<-pooled_po_dataset[pooled_po_dataset$etude=="idealicu",]$probs-.25
 
 dfs<-4
 #kn <- quantile(probs.c, seq(0,1,length=dfs)[-c(1,dfs)])
-kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+#kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+kn<-c(0.45, 0.5)-.25 # knots at different position for that one
 rg <-range(probs.c)
 
 a1<-ns(probs.c, knots = kn, Boundary.knots=rg)[,1]
@@ -1091,7 +1112,7 @@ b3<-ns(probs.int.t, knots = kn, Boundary.knots=rg)[,3]
 
 
 #fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+b1+b2, data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+a3+b1+b2+b3, data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
+fit.int.ard.idealicu<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + a1+a2+a3+b1+b2+b3, data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
 
 y0.precoce_<-data.frame(bras = 1, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(0, knots = kn, Boundary.knots=rg))
 y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg), ns(seq(0.02468, .55, by=.005)-.25, knots = kn, Boundary.knots=rg))
@@ -1099,12 +1120,12 @@ y0.tardif_<-data.frame(bras = 0, ns(seq(0.02468, .55, by=.005)-.25, knots = kn, 
 y0.precoce_bis<-data.frame(bras="STRATEGIE PRECOCE", y0.precoce_[,-1])
 #colnames(y0.precoce_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.precoce_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-precoced60d_idealicu<-1-tail(survfit(fit.int, newdata=y0.precoce_bis)$surv,1)
+precoced60d_idealicu<-1-tail(survfit(fit.int.ard.idealicu, newdata=y0.precoce_bis)$surv,1)
 
 y0.tardif_bis<-data.frame(bras="STRATEGIE D ATTENTE", y0.tardif_[,-1])
 #colnames(y0.tardif_bis)<-c("bras","a1","a2","b1","b2")
 colnames(y0.tardif_bis)<-c("bras","a1","a2","a3","b1","b2", "b3")
-tardifd60d_idealicu<-1-tail(survfit(fit.int, newdata=y0.tardif_bis)$surv,1)
+tardifd60d_idealicu<-1-tail(survfit(fit.int.ard.idealicu, newdata=y0.tardif_bis)$surv,1)
 
 # caution: function wroks only with two knots at position 0.13143840 & 0.32789328
 # for more knots or different knots positions function adjustment is needed
@@ -1113,8 +1134,8 @@ se_s_idealicu<-ardbootfunction(dataset=pooled_po_dataset[pooled_po_dataset$etude
 
 plot(seq(0.02468, .55, by=.005), precoced60d_idealicu-tardifd60d_idealicu, type="l", ylim=c(-.2,.2))
 abline(a=0,b=0)
-lines(seq(0.02468, .55, by=.005), (precoced60d_idealicu-tardifd60d_idealicu)-qnorm(.975)*se_s, lty=2)
-lines(seq(0.02468, .55, by=.005), (precoced60d_idealicu-tardifd60d_idealicu)+qnorm(.975)*se_s, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_idealicu-tardifd60d_idealicu)-qnorm(.975)*se_s_idealicu, lty=2)
+lines(seq(0.02468, .55, by=.005), (precoced60d_idealicu-tardifd60d_idealicu)+qnorm(.975)*se_s_idealicu, lty=2)
 
 
 ### ARD plot : IDEALICU subanalysis : RCS two knots for ARD
@@ -1208,21 +1229,21 @@ rg <-range(probs.c)
 library(splines)
 fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
 
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
+fit.int.er<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset, x=TRUE)
 
-ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
-ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+ypred<-predict(fit.int.er, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int.er, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
 
-ypred$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$surv,1))
-ypred$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$std.err,1))
+ypred$fit<-as.numeric(1-tail(survfit(fit.int.er, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$surv,1))
+ypred$se<-as.numeric(tail(survfit(fit.int.er, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$std.err,1))
 
-ypred2$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
-ypred2$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
+ypred2$fit<-as.numeric(1-tail(survfit(fit.int.er, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
+ypred2$se<-as.numeric(tail(survfit(fit.int.er, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
 
 yy.er <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 yy2.er<- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 
-#matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy,yy2), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
+matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.er,yy2.er), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
 
 # akiki
 probs.int.p <- with(pooled_po_dataset[pooled_po_dataset$etude=="akiki",], ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
@@ -1236,35 +1257,36 @@ rg <-range(probs.c)
 library(splines)
 fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
 
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
+fit.int.er.akiki<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="akiki",], x=TRUE)
 
-ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
-ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
+ypred<-predict(fit.int.er.akiki, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
+ypred2<-predict(fit.int.er.akiki, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
 
-ypred$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$surv,1))
-ypred$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$std.err,1))
+ypred$fit<-as.numeric(1-tail(survfit(fit.int.er.akiki, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$surv,1))
+ypred$se<-as.numeric(tail(survfit(fit.int.er.akiki, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$std.err,1))
 
-ypred2$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
-ypred2$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
+ypred2$fit<-as.numeric(1-tail(survfit(fit.int.er.akiki, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
+ypred2$se<-as.numeric(tail(survfit(fit.int.er.akiki, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
 
 yy.er.akiki <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 yy2.er.akiki <- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 
-#matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.akiki,yy2.akiki), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
+matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.er.akiki,yy2.er.akiki), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
 
 # idealicu
 probs.int.p <- with(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], ifelse(bras=="STRATEGIE PRECOCE", probs-0.25, 0))
 probs.int.t <- with(pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], ifelse(bras=="STRATEGIE D ATTENTE", probs-0.25, 0))
 probs.c<-pooled_po_dataset[pooled_po_dataset$etude=="idealicu",]$probs-.25
 
-dfs<-5
+dfs<-7
 #kn <- quantile(probs.c, seq(0,1,length=dfs)[-c(1,dfs)])
-kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+#kn<-c(0.13143840, 0.32789328)-.25 # 2nd & 5th quantile mean for 6 quantiles
+kn<-c(0.45, 0.5)-.25 # knots at different position for that one
 rg <-range(probs.c)
 library(splines)
 fit.sep<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.int.p, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
 
-fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
+fit.int.er.idealicu<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STRATEGIE PRECOCE') + ns(probs.c, knots = kn, Boundary.knots=rg) + ns(probs.int.t, knots = kn, Boundary.knots=rg), data = pooled_po_dataset[pooled_po_dataset$etude=="idealicu",], x=TRUE)
 
 #ypred<-predict(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0), se=TRUE)
 #ypred2<-predict(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25), se=TRUE)
@@ -1272,17 +1294,19 @@ fit.int<-coxph(Surv(derniere.nouvelles.censureJ60, etat.censureJ60)~I(bras=='STR
 ypred<-data.frame(fit=rep(NA,106), se=rep(NA,106))
 ypred2<-data.frame(fit=rep(NA,106), se=rep(NA,106))
 
-ypred$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$surv,1))
-ypred$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$std.err,1))
+ypred$fit<-as.numeric(1-tail(survfit(fit.int.er.idealicu, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$surv,1))
+ypred$se<-as.numeric(tail(survfit(fit.int.er.idealicu, newdata=data.frame(bras="STRATEGIE PRECOCE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=0))$std.err,1))
 
-ypred2$fit<-as.numeric(1-tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
-ypred2$se<-as.numeric(tail(survfit(fit.int, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
+ypred2$fit<-as.numeric(1-tail(survfit(fit.int.er.idealicu, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$surv,1))
+ypred2$se<-as.numeric(tail(survfit(fit.int.er.idealicu, newdata=data.frame(bras="STRATEGIE D ATTENTE", probs.c=seq(0.02468, .55, by=.005)-.25, probs.int.t=seq(0.02468, .55, by=.005)-.25))$std.err,1))
 
 yy.er.idealicu <- ypred$fit + outer(ypred$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 yy2.er.idealicu <- ypred2$fit + outer(ypred2$se, c(0, -qnorm(.975), qnorm(.975)), '*')
 
-#matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.idealicu,yy2.idealicu), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk")
-
+matplot(seq(0.02468, .55, by=.005), matrix(cbind(yy.er.idealicu,yy2.er.idealicu), ncol=6), type='l', lty=c(1,2,2), col=c(1,1,1,2,2,2), lwd=2, xlab="Probs", ylab="Relative risk", ylim=c(.1,.8))
+for (i in 1:length(quantilecuts)) {
+  segments(quantilecuts[i],.1, quantilecuts[i], .8, lty=3)
+}
 
 ## accurate event rate tables in pooled studies and subanalysis
 coxph.obj<-list()
