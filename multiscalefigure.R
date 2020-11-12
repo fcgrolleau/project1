@@ -1,5 +1,35 @@
+save(list=c("quantilemean", "quantilecuts", 
+            "deathrate_early", "deathrate_late",
+            "deathrate_early.akiki", "deathrate_late.akiki",
+            "deathrate_early.idealicu", "deathrate_late.idealicu",
+            "HR_overall", "HR_overall_akiki", "HR_overall_idealicu",
+            "HRs","HRs_akiki", "HRs_idealicu",
+            "ARD_overall", "ARD_overall_akiki", "ARD_overall_idealicu",
+            "ARDd60_ci", "ARDd60_ci_akiki", "ARDd60_ci_idealicu",
+            
+            "yy.er", "yy2.er",
+            "yy.er.akiki", "yy2.er.akiki",
+            "yy.er.idealicu", "yy2.er.idealicu",
+            "yy.hr", "yy.hr.akiki", "yy.hr.idealicu",
+            "precoced60d_pooled", "tardifd60d_pooled", "se_s_pooled",
+            "precoced60d_akiki", "tardifd60d_akiki", "se_s_akiki",
+            "precoced60d_idealicu", "tardifd60d_idealicu", "se_s_idealicu",
+            
+            "finalmodel", "t_finalmodel_vcov",
+            
+            "fit.int.hr", "fit.int.hr.akiki", "fit.int.hr.idealicu",
+            "fit.int.ard", "fit.int.ard.akiki", "fit.int.ard.idealicu",
+            "fit.int.er", "fit.int.er.akiki", "fit.int.er.idealicu"
+            ), file="multiscalefigdata.Rdata")
+
+load("multiscalefigdata.Rdata")
+
+library(gplots)
+
 dev.off()
+dev.new(width=10,height=10,noRStudioGD = TRUE)
 par(mfrow=c(3,3))
+q<-5
 
 # pooled
 plotCI(quantilemean+.005, deathrate_early[1,], ui=deathrate_early[3,], li=deathrate_early[2,], pch=18, gap=0, sfrac=0.003, col="#00a1d5", barcol="black", xlab="", ylab="60 Days Death Rate",xlim=c(0, .6),ylim=c(.1, .83), yaxt="n", bty="n", main="AKIKI & IDEAL-ICU")
@@ -122,9 +152,9 @@ lines(c(0,.6), y=c(0,0))
 plotCI(quantilemean, ARDd60_ci[1,], ui=ARDd60_ci[3,], li=ARDd60_ci[2,], pch=15, gap=0, sfrac=0.003, col="#79af97", barcol="black", xlab="Predicted Probability of RRT Initiation Within 48 Hours", ylab="Absolute Risk Reduction", main="", xlim=c(0, .6), ylim=c(-.35,.3), las=1, bty="n", add=TRUE)
 #text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
 for (i in 1:length(quantilecuts)) {
-        segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
+        segments(quantilecuts[i],-.35, quantilecuts[i], .3, lty=3)
 }
-segments(0,-.35, 0, .27, lty=3)
+segments(0,-.35, 0, .3, lty=3)
 #arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
 #mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
 #mtext(text="favors early", side=4,line=-0, at=-0.02, cex=1, adj=1)
@@ -139,9 +169,9 @@ plotCI(quantilemean, ARDd60_ci_akiki[1,], ui=ARDd60_ci_akiki[3,], li=ARDd60_ci_a
 lines(c(0,.6), y=c(0,0))
 #text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
 for (i in 1:length(quantilecuts)) {
-        segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
+        segments(quantilecuts[i],-.35, quantilecuts[i], .3, lty=3)
 }
-segments(0,-.35, 0, .27, lty=3)
+segments(0,-.35, 0, .3, lty=3)
 segments(0,ARD_overall_akiki[1], .6, ARD_overall_akiki[1], lty=2, lwd=2)
 #arrows(.6, c(0.02,-0.02), .6, c(0.02+.15, -0.02-.15), length = 0.07, xpd=TRUE)
 #mtext(text="favors delayed", side=4,line=0, at=0.02, cex=1, adj=0)
@@ -157,9 +187,9 @@ plotCI(quantilemean, ARDd60_ci_idealicu[1,], ui=ARDd60_ci_idealicu[3,], li=ARDd6
 lines(c(0,.6), y=c(0,0))
 #text(quantilemean, 0.3, paste("Q", 1:q, sep=""), cex=.8)
 for (i in 1:length(quantilecuts)) {
-        segments(quantilecuts[i],-.35, quantilecuts[i], .27, lty=3)
+        segments(quantilecuts[i],-.35, quantilecuts[i], .3, lty=3)
 }
-segments(0,-.35, 0, .27, lty=3)
+segments(0,-.35, 0, .3, lty=3)
 segments(0,ARD_overall_idealicu[1], .6, ARD_overall_idealicu[1], lty=2, lwd=2)
 arrows(.6, c(0.02,-0.02), .6, c(0.02+.2, -0.02-.2), length = 0.07, xpd=TRUE)
 mtext(text="favors delayed", side=4,line=0, at=0.02, cex=2/3, adj=0)
@@ -170,6 +200,6 @@ polygon(c(seq(0.02468, .55, by=.005), rev(seq(0.02468, .55, by=.005))), c((preco
                                                                           rev((precoced60d_idealicu-tardifd60d_idealicu)-qnorm(.975)*se_s_idealicu)),
         col= rgb(55,78,85, alpha = 38, maxColorValue=255), border=NA)
 
-dev.copy2pdf(file="multiscalefig.pdf")
+#dev.copy2pdf(file="multiscalefig.pdf")
 #
 
