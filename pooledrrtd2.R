@@ -9,6 +9,8 @@ library(gplots)
 library(survminer)
 library(gtools)
 
+source("rmst function.R")
+source("ardbootfunction.R")
 
 load("rcts.RData")
 
@@ -308,7 +310,7 @@ for (i in 1:imp_pooled_tardif$m) {
         text(0,textpos[6]-space, cex=.8, pos=4, paste("   biais-corrected c-statistic:", format(round(cindex[2,i],2), nsmall=2) ))
         box()
         }
-#dev.copy2pdf(file="calibrationplotq5.pdf")
+#dev.copy2pdf(file="project")
 
 ### Treatment effect across quantiles
 
@@ -1444,4 +1446,7 @@ lines(seq(0.02468, .55, by=.005), yy2.er.idealicu[,1], col="#b24745")
 
 legend(.4, .35, inset=.05, legend=c("Early strategy", "Delayed strategy"),
        lty=c(1,1), pch=c(18, 4), col=c("#00a1d5", "#b24745"), lwd=1, box.lty=0, cex=.7)
+
+#save.image(file="pooledrrtd2.Rdata")
+
 
